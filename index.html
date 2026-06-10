@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peppered Moth (Biston betularia) Simulation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            overflow: hidden;
+            user-select: none;
+            height: 100vh;
+            display: flex;
+            background-color: #333;
+        }
+
+        /* --- 布局核心：左侧控制栏，右侧游戏区 --- */
+        
+        #left-panel-container {
+            width: 280px; /* 稍微加宽一点以容纳学名 */
+            height: 100%;
+            background: #fcfcfc;
+            border-right: 1px solid #ccc;
+            display: flex;
+            flex-direction: column;
+            z-index: 100;
+            padding: 10px;
+            overflow-y: auto;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+        }
+
+        #game-stage {
+            flex: 1;
+            position: relative;
+            height: 100%;
+            transition: background-color 0.5s ease;
+            overflow: hidden;
+        }
+
+        /* --- 背景设定 --- */
+        .white-env {
+            background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
+        }
+
+        .black-env {
+            background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+        }
+
+        /* --- 飞蛾样式 --- */
+        .moth {
+            position: absolute;
+            font-size: 35px;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+            z-index: 10;
+        }
+
+        .white-moth { filter: brightness(0) invert(1); }
+        .black-moth { filter: brightness(0); }
+
+        .white-env .white-moth { opacity: 0.15; }
+        .white-env .black-moth { opacity: 0.9; }
+        .black-env .white-moth { opacity: 0.9; }
+        .black-env .black-moth { opacity: 0.15; }
+
+        .moth:hover {
+            opacity: 0.4 !important;
+            transform: scale(1.2);
+        }
+
+        .capture-effect {
+            position: absolute;
+            pointer-events: none;
+            animation: capture 0.3s ease-out;
+            font-size: 25px;
+            z-index: 20;
+        }
+
+        @keyframes capture {
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+
+        /* --- UI 组件 --- */
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .lang-btn {
+            font-size: 11px;
+            padding: 2px 6px;
+            background: #eee;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .panel-box {
+            background: rgba(255, 255, 255, 0.92);
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+            margin-bottom: 8px;
+            font-size: 11px;
+        }
+
+        h3 { margin: 0 0 5px 0; color: #333; font-size: 13px; font-weight: bold;}
+        h4 { margin: 5px 0 3px 0; color: #555; font-size: 11px; font-weight: bold;}
+
+        .stat-table, .gene-table { width: 100%; border-collapse: collapse; margin: 2px 0; }
+        .stat-table td, .stat-table th, .gene-table td, .gene-table th {
+            border: 1px solid #ddd; padding: 3px; font-size: 10px; text-align: center;
+        }
+        .stat-table th, .gene-table th { background: #f0f0f0; }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            margin: 2px 0;
+            width: 100%;
+        }
+        button:hover:not(:disabled) { background: #45a049; }
+        button:disabled { background: #cccccc; cursor: not-allowed; }
+        
+        .quick-evolution { background: #FF9800; }
+        .quick-evolution:hover:not(:disabled) { background: #F57C00; }
+        #toggle-env { background: #9C27B0; }
+        #toggle-env:hover:not(:disabled) { background: #7B1FA2; }
+        #reset-game { background: #607d8b; }
+
+        .progress-bar {
+            width: 100%; height: 8px; background: #e0e0e0;
+            border-radius: 4px; overflow: hidden; margin: 5px 0;
+        }
+        .progress-fill { height: 100%; background: #4CAF50; transition: width 0.2s ease; }
+
+        .chart-container {
+            height: 100px;
+            position: relative;
+            background: #fff;
+            border: 1px solid #eee;
+            margin-bottom: 5px;
+            padding: 2px;
+        }
+
+        /* --- 弹窗 --- */
+        .overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+            position: relative;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        .modal h2 { margin-top: 0; color: #333; }
+        .modal p { color: #666; line-height: 1.6; text-align: left; font-size: 13px; }
+        .mode-button {
+            display: block; width: 220px; margin: 10px auto; padding: 12px;
+            font-size: 14px; background: #2196F3; color: white;
+            border: none; border-radius: 5px; cursor: pointer;
+        }
+        .mode-button:hover { background: #1976D2; }
+
+        .source-note {
+            background: #f5f5f5; padding: 8px; margin-top: 10px;
+            font-size: 11px; color: #777; border-left: 3px solid #999; text-align: left;
+        }
+
+        .countdown {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 60px; font-weight: bold; color: #4CAF50;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            display: none; pointer-events: none;
+        }
+
+        .start-prompt {
+            position: absolute;
+            top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(76, 175, 80, 0.95);
+            color: white; padding: 15px 30px; border-radius: 8px;
+            font-size: 16px; cursor: pointer; display: none;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+
+        .trans-toast {
+            position: absolute;
+            top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(255,255,255,0.95);
+            padding: 20px 40px; border-radius: 10px;
+            text-align: center; display: none;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+
+        .lang-float {
+            position: absolute; top: 10px; right: 10px;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="left-panel-container">
+        <div class="top-bar">
+            <span style="font-weight:bold; font-size:12px;" data-i18n="title">Sim</span>
+            <button class="lang-btn" onclick="toggleLanguage()">En/中文</button>
+        </div>
+
+        <div class="panel-box">
+            <div id="mode-display" style="background:#2196F3; color:white; padding:2px 5px; border-radius:3px; font-size:10px; margin-bottom:5px; display:none;"></div>
+            
+            <div style="margin: 2px 0;">
+                <span style="font-weight: bold;" data-i18n="env">Env:</span>
+                <span id="environment">Light</span>
+            </div>
+            <div style="margin: 2px 0;">
+                <span style="font-weight: bold;" data-i18n="gen">Gen:</span>
+                <span id="generation">1</span>
+            </div>
+            <div class="progress-bar">
+                <div id="time-progress" class="progress-fill" style="width: 100%"></div>
+            </div>
+            
+            <button id="start-button" data-i18n="btn_start">Start</button>
+            <button id="toggle-env" style="display: none;" data-i18n="btn_switch">Switch Env</button>
+            <button id="reset-game" data-i18n="btn_reset">Reset</button>
+        </div>
+
+        <div class="panel-box">
+            <h4 data-i18n="stats">Stats</h4>
+            <table class="stat-table">
+                <tr>
+                    <th data-i18n="type">Type</th>
+                    <th data-i18n="total">Total</th>
+                    <th data-i18n="caught">Caught</th>
+                    <th data-i18n="rate">Surv%</th>
+                </tr>
+                <tr>
+                    <td data-i18n="light">Light</td>
+                    <td id="white-total">0</td>
+                    <td id="white-caught">0</td>
+                    <td id="white-survival">0%</td>
+                </tr>
+                <tr>
+                    <td data-i18n="dark">Dark</td>
+                    <td id="black-total">0</td>
+                    <td id="black-caught">0</td>
+                    <td id="black-survival">0%</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="panel-box">
+            <h4 data-i18n="genes">Genetics</h4>
+            <table class="gene-table">
+                <tr>
+                    <th data-i18n="gene_S">S (Dark)</th>
+                    <th data-i18n="gene_s">s (Light)</th>
+                </tr>
+                <tr>
+                    <td id="freq-S-text">5%</td>
+                    <td id="freq-s-text">95%</td>
+                </tr>
+            </table>
+            <div style="font-size:9px; color:#666; margin-top:2px; text-align:center;">
+                SS:<span id="freq-SS">0.3%</span> | Ss:<span id="freq-Ss">9.5%</span> | ss:<span id="freq-ss">90.3%</span>
+            </div>
+        </div>
+
+        <div class="panel-box" id="quick-evolution-panel" style="display:none;">
+            <h4 data-i18n="speed">Speed Up</h4>
+            <button class="quick-evolution" onclick="quickEvolution(5)" data-i18n="btn_5gen">+5 Gens</button>
+            <button class="quick-evolution" onclick="quickEvolution(10)" data-i18n="btn_10gen">+10 Gens</button>
+            <button id="history-quick-10" class="quick-evolution" style="display: none; background:#E65100;" onclick="historyQuickEvolution(10)" data-i18n="btn_skip">Simulate 10 Gens</button>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="survival-chart"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="frequency-chart"></canvas>
+        </div>
+    </div>
+
+    <div id="game-stage" class="white-env">
+        <div id="start-prompt" class="start-prompt" onclick="hideStartPrompt()" data-i18n="click_start">
+            Click to Start
+        </div>
+        <div id="countdown" class="countdown"></div>
+        
+        <div id="generation-transition" class="trans-toast">
+            <h2 data-i18n="round_end">Gen Complete</h2>
+            <p data-i18n="next_gen">Preparing next...</p>
+        </div>
+    </div>
+
+    <div id="mode-selector" class="overlay">
+        <div class="modal">
+            <div class="lang-float">
+                 <button class="lang-btn" onclick="toggleLanguage()">En/中文</button>
+            </div>
+            <h1 style="margin-top:10px;" data-i18n="game_title">Peppered Moth Simulation</h1>
+            <p style="text-align:center; font-size:12px; color:#999;" data-i18n="subtitle">Natural Selection & Industrial Melanism</p>
+            <button class="mode-button" onclick="selectMode('free')" data-i18n="mode_free">Free Mode (Predator)</button>
+            <button class="mode-button" onclick="selectMode('history')" style="background:#4CAF50;" data-i18n="mode_history">Historical Mode (Edu)</button>
+        </div>
+    </div>
+
+    <div id="stage-explanation" class="overlay" style="display:none;">
+        <div class="modal">
+            <h2 id="stage-title">Title</h2>
+            <div id="stage-content" style="text-align:left; font-size:14px; margin-bottom:10px;"></div>
+            <div id="stage-source" class="source-note" style="display:none;"></div>
+            <button onclick="closeStageExplanation()" style="width:120px; margin-top:15px; background:#2196F3;" data-i18n="btn_ok">Start</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 国际化数据 ---
+        // 默认语言改为英文
+        let currentLang = 'en';
+        
+        const dict = {
+            zh: {
+                title: "桦尺蛾模拟",
+                game_title: "桦尺蛾 (<i>Biston betularia</i>) 自然选择",
+                subtitle: "探索环境如何改变物种基因频率",
+                mode_free: "🕊️ 自由模式 (捕食者体验)",
+                mode_history: "🏭 真实历史模式 (教学专用)",
+                env: "环境:",
+                env_light: "浅色树干",
+                env_dark: "黑色树干",
+                gen: "世代:",
+                btn_start: "开始游戏",
+                btn_switch: "切换环境",
+                btn_reset: "重置游戏",
+                stats: "📊 实时统计",
+                type: "表型",
+                total: "总数",
+                caught: "被捕",
+                rate: "存活率",
+                light: "浅色 (<i>f. typica</i>)",
+                dark: "黑色 (<i>f. carbonaria</i>)",
+                genes: "🧬 基因频率",
+                gene_S: "S (黑色基因)",
+                gene_s: "s (浅色基因)",
+                speed: "⚡ 快进",
+                btn_5gen: "+5 代",
+                btn_10gen: "+10 代",
+                btn_skip: "一键迭代10代",
+                click_start: "点击开始捕食",
+                round_end: "本代结束",
+                next_gen: "准备进入下一代...",
+                btn_ok: "开始体验",
+                
+                // 自由模式引导
+                tut_free_title: "🕊️ 扮演捕食者",
+                tut_free_content: "请你扮演一只鸟。在接下来的20秒内，尽可能多地捕捉桦尺蛾。<br>请留意：在不同的背景颜色下，哪种颜色的蛾子更容易被发现？",
+                
+                // 历史模式内容
+                h_stage1_title: "阶段一：工业革命前 (1800-1848)",
+                h_stage1_content: "在工业革命之前，英国曼彻斯特地区的树干上长满了浅色的地衣。此时，<b>浅色型 (<i>f. typica</i>)</b> 桦尺蛾拥有完美的伪装。黑色型 (<i>f. carbonaria</i>) 因容易被鸟类捕食而极其罕见。",
+                h_stage1_source: "📚 <b>背景来源：</b> 此时黑色基因(S)虽然存在于基因库中，但由于自然选择的压力，其频率长期维持在1%以下。",
+                
+                h_stage2_title: "阶段二：工业黑化 (1848-1950)",
+                h_stage2_content: "随着工业革命带来的煤烟污染，地衣死亡，树干变黑。<b>选择压力发生逆转！</b> 黑色型蛾子获得了生存优势，迅速繁衍。这被称为“工业黑化”现象。",
+                h_stage2_source: "📚 <b>史实数据：</b> 1848年曼彻斯特首次记录到黑色型桦尺蛾。到1895年，当地黑色型比例已高达98%。这是自然选择最著名的案例之一。",
+                
+                h_stage3_title: "阶段三：环境治理后 (1956至今)",
+                h_stage3_content: "1956年《清洁空气法案》通过后，污染减少，树干地衣恢复。环境再次变回浅色，浅色型蛾子重新获得优势，黑色型比例开始下降。",
+                h_stage3_source: "📚 <b>科学验证：</b> 遗传学家 Kettlewell 通过标记重捕法证实了鸟类捕食是这一变化的主要驱动力。"
+            },
+            en: {
+                title: "Moth Sim",
+                game_title: "Peppered Moth (<i>Biston betularia</i>)",
+                subtitle: "Natural Selection & Industrial Melanism Simulation",
+                mode_free: "🕊️ Sandbox Mode (Predator)",
+                mode_history: "🏭 Historical Mode (Educational)",
+                env: "Env:",
+                env_light: "Light Bark",
+                env_dark: "Dark Bark",
+                gen: "Gen:",
+                btn_start: "Start Game",
+                btn_switch: "Switch Env",
+                btn_reset: "Reset",
+                stats: "📊 Statistics",
+                type: "Phenotype",
+                total: "Total",
+                caught: "Caught",
+                rate: "Survival",
+                light: "Light (<i>f. typica</i>)",
+                dark: "Dark (<i>f. carbonaria</i>)",
+                genes: "🧬 Genetics",
+                gene_S: "S (Dark Gene)",
+                gene_s: "s (Light Gene)",
+                speed: "⚡ Speed Up",
+                btn_5gen: "+5 Gens",
+                btn_10gen: "+10 Gens",
+                btn_skip: "Simulate 10 Gens",
+                click_start: "Click to Hunt",
+                round_end: "Generation End",
+                next_gen: "Preparing next generation...",
+                btn_ok: "Start",
+
+                tut_free_title: "🕊️ Be the Predator",
+                tut_free_content: "You are a bird. Catch as many moths as you can in 20 seconds.<br>Notice: Which color is harder to see against the background?",
+
+                h_stage1_title: "Stage I: Pre-Industrial (1800-1848)",
+                h_stage1_content: "Before industrialization, trees were covered in light lichen. The <b>Light morph (<i>f. typica</i>)</b> was well camouflaged. Dark mutants were rare as they were easily spotted by birds.",
+                h_stage1_source: "📚 <b>Context:</b> The dark gene (S) frequency was <1% due to negative selection pressure.",
+
+                h_stage2_title: "Stage II: Industrial Melanism (1848-1950)",
+                h_stage2_content: "Soot from factories killed lichen and blackened trees. <b>Selection Reversed!</b> The Dark morph gained an advantage. This is known as 'Industrial Melanism'.",
+                h_stage2_source: "📚 <b>Fact:</b> By 1895, 98% of moths in Manchester were dark.",
+
+                h_stage3_title: "Stage III: Post-Industrial (1956+)",
+                h_stage3_content: "After the Clean Air Act (1956), pollution dropped. Lichen returned. Trees became light again, and the light moth population recovered.",
+                h_stage3_source: "📚 <b>Science:</b> Kettlewell's experiments confirmed bird predation drove these changes."
+            }
+        };
+
+        function t(key) { return dict[currentLang][key] || key; }
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'zh' ? 'en' : 'zh';
+            updateTexts();
+        }
+
+        function updateTexts() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                el.innerHTML = t(el.dataset.i18n);
+            });
+            // 动态内容更新
+            if(gameState.environment) {
+                document.getElementById('environment').textContent = 
+                    gameState.environment === 'white' ? t('env_light') : t('env_dark');
+            }
+            // 更新图表标签
+            if(survivalChart) {
+                // 去除HTML标签用于图表显示
+                const lightLabel = t('light').replace(/<[^>]*>?/gm, '');
+                const darkLabel = t('dark').replace(/<[^>]*>?/gm, '');
+                survivalChart.data.datasets[0].label = lightLabel;
+                survivalChart.data.datasets[1].label = darkLabel;
+                survivalChart.update();
+            }
+            if(frequencyChart) {
+                frequencyChart.data.datasets[0].label = t('gene_S');
+                frequencyChart.data.datasets[1].label = t('gene_s');
+                frequencyChart.update();
+            }
+        }
+
+        // --- 游戏逻辑 ---
+
+        const gameStage = document.getElementById('game-stage');
+
+        let gameState = {
+            mode: null,
+            historyStage: 1,
+            stageGenerations: [0, 0, 0],
+            stagePlayedOnce: [false, false, false],
+            generation: 1,
+            environment: 'white',
+            isPlaying: false,
+            hasPlayed: false,
+            timeRemaining: 20,
+            moths: [],
+            stats: { white: { total: 0, caught: 0 }, black: { total: 0, caught: 0 } },
+            genotypeStats: { SS: { total: 0, caught: 0 }, Ss: { total: 0, caught: 0 }, ss: { total: 0, caught: 0 } },
+            geneFrequency: { S: 0.05, s: 0.95 },
+            lastSurvivalRates: { white: 0.5, black: 0.5 },
+            history: { survivalRates: { white: [], black: [] }, geneFrequencies: { S: [0.05], s: [0.95] }, generations: [0] }
+        };
+
+        const chartOptions = {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { labels: { boxWidth: 10, font: {size: 10} } } },
+            scales: { x: { ticks: { display: false } }, y: { beginAtZero: true, ticks: { maxTicksLimit: 5 } } },
+            elements: { point: { radius: 0 } }
+        };
+
+        const survivalChart = new Chart(document.getElementById('survival-chart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Light', data: [], borderColor: '#aaa', backgroundColor: '#ddd', borderWidth: 1.5 },
+                    { label: 'Dark', data: [], borderColor: '#333', backgroundColor: '#555', borderWidth: 1.5 }
+                ]
+            },
+            options: { ...chartOptions, scales: { ...chartOptions.scales, y: { max: 100 } } }
+        });
+
+        const frequencyChart = new Chart(document.getElementById('frequency-chart'), {
+            type: 'line',
+            data: {
+                labels: [0],
+                datasets: [
+                    { label: 'S (Dark Gene)', data: [0.05], borderColor: '#333', borderWidth: 1.5 },
+                    { label: 's (Light Gene)', data: [0.95], borderColor: '#aaa', borderWidth: 1.5 }
+                ]
+            },
+            options: { ...chartOptions, scales: { ...chartOptions.scales, y: { max: 1 } } }
+        });
+
+        function selectMode(mode) {
+            gameState.mode = mode;
+            document.getElementById('mode-selector').style.display = 'none';
+            
+            const display = document.getElementById('mode-display');
+            display.style.display = 'block';
+            // 简略显示模式名称
+            const modeName = mode === 'free' ? t('mode_free') : t('mode_history');
+            display.textContent = modeName.split(' ')[0] + ' ' + modeName.split(' ')[1];
+
+            if (mode === 'free') {
+                setEnv('black');
+                document.getElementById('toggle-env').style.display = 'block';
+                document.querySelectorAll('.quick-evolution:not(#history-quick-10)').forEach(b => b.style.display = 'block');
+                document.getElementById('quick-evolution-panel').style.display = 'block';
+                document.getElementById('history-quick-10').style.display = 'none';
+                
+                showModal(t('tut_free_title'), t('tut_free_content'), null);
+            } else {
+                document.getElementById('toggle-env').style.display = 'none';
+                document.getElementById('quick-evolution-panel').style.display = 'block';
+                document.querySelectorAll('.quick-evolution:not(#history-quick-10)').forEach(b => b.style.display = 'none');
+                
+                showHistoryStage(1);
+            }
+            updateStats();
+        }
+
+        function setEnv(env) {
+            gameState.environment = env;
+            gameStage.className = env === 'white' ? 'white-env' : 'black-env';
+            document.getElementById('environment').textContent = env === 'white' ? t('env_light') : t('env_dark');
+        }
+
+        function showHistoryStage(stage) {
+            const title = t(`h_stage${stage}_title`);
+            const content = t(`h_stage${stage}_content`);
+            const source = t(`h_stage${stage}_source`);
+            
+            if (stage === 2) setEnv('black');
+            else setEnv('white');
+
+            showModal(title, content, source);
+        }
+
+        function showModal(title, content, source) {
+            document.getElementById('stage-title').innerHTML = title;
+            document.getElementById('stage-content').innerHTML = content;
+            const srcDiv = document.getElementById('stage-source');
+            if(source) { srcDiv.style.display = 'block'; srcDiv.innerHTML = source; }
+            else { srcDiv.style.display = 'none'; }
+            document.getElementById('stage-explanation').style.display = 'flex';
+        }
+
+        function closeStageExplanation() {
+            document.getElementById('stage-explanation').style.display = 'none';
+            if(!gameState.isPlaying) showStartPrompt();
+        }
+
+        function showStartPrompt() { document.getElementById('start-prompt').style.display = 'block'; }
+        function hideStartPrompt() { 
+            document.getElementById('start-prompt').style.display = 'none'; 
+            startGame(); 
+        }
+
+        function createMoth() {
+            const moth = document.createElement('div');
+            moth.className = 'moth';
+            moth.innerHTML = '🦋';
+            
+            const p = gameState.geneFrequency.S;
+            const q = gameState.geneFrequency.s;
+            const rand = Math.random();
+            let g, ph;
+            
+            if (rand < p * p) { g = 'SS'; ph = 'black'; }
+            else if (rand < p * p + 2 * p * q) { g = 'Ss'; ph = 'black'; }
+            else { g = 'ss'; ph = 'white'; }
+            
+            moth.classList.add(ph === 'white' ? 'white-moth' : 'black-moth');
+            moth.dataset.phenotype = ph;
+            moth.dataset.genotype = g;
+            
+            const stageW = gameStage.clientWidth;
+            const stageH = gameStage.clientHeight;
+            
+            let x = Math.random() * (stageW - 60) + 30;
+            let y = Math.random() * (stageH - 60) + 30;
+            
+            let attempts = 0;
+            while(attempts < 5 && isTooClose(x, y)) {
+                x = Math.random() * (stageW - 60) + 30;
+                y = Math.random() * (stageH - 60) + 30;
+                attempts++;
+            }
+            
+            moth.style.left = x + 'px';
+            moth.style.top = y + 'px';
+            
+            moth.addEventListener('mousedown', function(e) {
+                e.stopPropagation();
+                if (gameState.isPlaying) catchMoth(this);
+            });
+            
+            gameStage.appendChild(moth);
+            gameState.moths.push({ element: moth, x, y });
+            gameState.stats[ph].total++;
+            gameState.genotypeStats[g].total++;
+            
+            setTimeout(() => {
+                if (moth.parentNode && gameState.isPlaying) {
+                    moth.remove();
+                    gameState.moths = gameState.moths.filter(m => m.element !== moth);
+                }
+            }, 3000);
+            updateStats();
+        }
+
+        function isTooClose(x, y) {
+            return gameState.moths.some(m => {
+                const dx = m.x - x;
+                const dy = m.y - y;
+                return Math.sqrt(dx*dx + dy*dy) < 60;
+            });
+        }
+
+        function catchMoth(moth) {
+            const ph = moth.dataset.phenotype;
+            const g = moth.dataset.genotype;
+            gameState.stats[ph].caught++;
+            gameState.genotypeStats[g].caught++;
+            
+            const eff = document.createElement('div');
+            eff.className = 'capture-effect';
+            eff.innerHTML = '💥';
+            eff.style.left = moth.style.left;
+            eff.style.top = moth.style.top;
+            gameStage.appendChild(eff);
+            setTimeout(() => eff.remove(), 300);
+            
+            moth.remove();
+            gameState.moths = gameState.moths.filter(m => m.element !== moth);
+            updateStats();
+        }
+
+        function updateStats() {
+            const s = gameState.stats;
+            const ws = s.white.total > 0 ? Math.round((1-s.white.caught/s.white.total)*100) : 0;
+            const bs = s.black.total > 0 ? Math.round((1-s.black.caught/s.black.total)*100) : 0;
+            
+            document.getElementById('white-total').textContent = s.white.total;
+            document.getElementById('white-caught').textContent = s.white.caught;
+            document.getElementById('white-survival').textContent = ws + '%';
+            document.getElementById('black-total').textContent = s.black.total;
+            document.getElementById('black-caught').textContent = s.black.caught;
+            document.getElementById('black-survival').textContent = bs + '%';
+            
+            const p = gameState.geneFrequency.S;
+            const q = gameState.geneFrequency.s;
+            document.getElementById('freq-S-text').textContent = (p*100).toFixed(1)+'%';
+            document.getElementById('freq-s-text').textContent = (q*100).toFixed(1)+'%';
+            document.getElementById('freq-SS').textContent = (p*p*100).toFixed(1)+'%';
+            document.getElementById('freq-Ss').textContent = (2*p*q*100).toFixed(1)+'%';
+            document.getElementById('freq-ss').textContent = (q*q*100).toFixed(1)+'%';
+        }
+
+        function startGame() {
+            document.getElementById('start-prompt').style.display = 'none';
+            gameState.isPlaying = true;
+            gameState.hasPlayed = true;
+            gameState.timeRemaining = 20;
+            
+            gameState.stats = { white: { total: 0, caught: 0 }, black: { total: 0, caught: 0 } };
+            gameState.genotypeStats = { SS: { total: 0, caught: 0 }, Ss: { total: 0, caught: 0 }, ss: { total: 0, caught: 0 } };
+            gameState.moths = [];
+            
+            document.getElementById('start-button').disabled = true;
+            document.getElementById('toggle-env').disabled = true;
+            
+            const mothInt = setInterval(() => {
+                if(!gameState.isPlaying) { clearInterval(mothInt); return; }
+                const c = Math.floor(Math.random()*3)+3;
+                for(let i=0; i<c; i++) if(gameState.moths.length < 18) createMoth();
+            }, 800);
+            
+            const timeInt = setInterval(() => {
+                if(!gameState.isPlaying) { clearInterval(timeInt); return; }
+                gameState.timeRemaining--;
+                document.getElementById('time-progress').style.width = (gameState.timeRemaining/20*100)+'%';
+                if(gameState.timeRemaining <= 0) {
+                    clearInterval(mothInt); clearInterval(timeInt);
+                    endGame();
+                }
+            }, 1000);
+        }
+
+        function endGame() {
+            gameState.isPlaying = false;
+            gameState.moths.forEach(m => m.element.remove());
+            gameState.moths = [];
+            
+            const s = gameState.stats;
+            const ws = s.white.total > 0 ? (1-s.white.caught/s.white.total) : 0;
+            const bs = s.black.total > 0 ? (1-s.black.caught/s.black.total) : 0;
+            
+            gameState.lastSurvivalRates = { white: ws, black: bs };
+            gameState.history.survivalRates.white.push(ws*100);
+            gameState.history.survivalRates.black.push(bs*100);
+            gameState.history.generations.push(gameState.generation);
+            
+            updateGeneFreq();
+            updateCharts();
+            
+            if(gameState.mode === 'history') {
+                gameState.stageGenerations[gameState.historyStage-1]++;
+                gameState.stagePlayedOnce[gameState.historyStage-1] = true;
+            }
+            
+            const trans = document.getElementById('generation-transition');
+            trans.style.display = 'block';
+            setTimeout(() => {
+                trans.style.display = 'none';
+                nextGen();
+            }, 1500);
+        }
+
+        function nextGen() {
+            gameState.generation++;
+            document.getElementById('generation').textContent = gameState.generation;
+            document.getElementById('start-button').disabled = false;
+            document.getElementById('toggle-env').disabled = false;
+            document.getElementById('time-progress').style.width = '100%';
+            updateStats();
+            checkHistoryStage();
+            if(gameState.hasPlayed) showStartPrompt();
+        }
+
+        function checkHistoryStage() {
+            if(gameState.mode !== 'history') return;
+            const curGen = gameState.stageGenerations[gameState.historyStage-1];
+            
+            if(gameState.stagePlayedOnce[gameState.historyStage-1]) {
+                document.getElementById('history-quick-10').style.display = 'block';
+            }
+            
+            if(curGen >= 10 && gameState.historyStage < 3) {
+                gameState.historyStage++;
+                gameState.stageGenerations[gameState.historyStage-1] = 0;
+                if(gameState.historyStage === 2) {
+                     if(gameState.geneFrequency.S < 0.02) { gameState.geneFrequency.S = 0.15; gameState.geneFrequency.s = 0.85; }
+                }
+                document.getElementById('history-quick-10').style.display = 'none';
+                showHistoryStage(gameState.historyStage);
+            }
+        }
+
+        function updateGeneFreq() {
+            const s = gameState.genotypeStats;
+            const wSS = s.SS.total > 0 ? (s.SS.total - s.SS.caught)/s.SS.total : 0;
+            const wSs = s.Ss.total > 0 ? (s.Ss.total - s.Ss.caught)/s.Ss.total : 0;
+            const wss = s.ss.total > 0 ? (s.ss.total - s.ss.caught)/s.ss.total : 0;
+            
+            const p = gameState.geneFrequency.S;
+            const q = gameState.geneFrequency.s;
+            
+            const wBar = p*p*wSS + 2*p*q*wSs + q*q*wss;
+            
+            if(wBar > 0) {
+                let newP = (p*p*wSS + p*q*wSs) / wBar;
+                newP = Math.max(0.001, Math.min(0.999, newP));
+                gameState.geneFrequency.S = newP;
+                gameState.geneFrequency.s = 1 - newP;
+            }
+            gameState.history.geneFrequencies.S.push(gameState.geneFrequency.S);
+            gameState.history.geneFrequencies.s.push(gameState.geneFrequency.s);
+        }
+
+        function quickEvolution(gens) { runSim(gens); }
+        function historyQuickEvolution(gens) {
+            const cur = gameState.stageGenerations[gameState.historyStage-1];
+            const max = 10 - cur;
+            const actual = Math.min(gens, max);
+            
+            let bias = 0;
+            if(gameState.historyStage === 1) bias = -0.3; 
+            if(gameState.historyStage === 2) bias = 0.35; 
+            if(gameState.historyStage === 3) bias = -0.3; 
+            
+            runSim(actual, bias);
+            gameState.stageGenerations[gameState.historyStage-1] += actual;
+            checkHistoryStage();
+        }
+
+        function runSim(gens, bias=null) {
+            let bw, bb;
+            if(bias !== null) {
+                bw = 0.5 - bias; bb = 0.5 + bias;
+            } else {
+                if(gameState.environment === 'white') { bw = 0.8; bb = 0.2; }
+                else { bw = 0.2; bb = 0.8; }
+            }
+            
+            for(let i=0; i<gens; i++) {
+                let w = bw + (Math.random()-0.5)*0.1;
+                let b = bb + (Math.random()-0.5)*0.1;
+                w = Math.max(0.01, Math.min(0.99, w));
+                b = Math.max(0.01, Math.min(0.99, b));
+                
+                const p = gameState.geneFrequency.S;
+                const q = gameState.geneFrequency.s;
+                const wBar = (p*p + 2*p*q)*b + q*q*w;
+                let newP = ((p*p + p*q)*b) / wBar;
+                
+                newP = Math.max(0.001, Math.min(0.999, newP));
+                gameState.geneFrequency.S = newP;
+                gameState.geneFrequency.s = 1-newP;
+                
+                gameState.generation++;
+                gameState.history.survivalRates.white.push(w*100);
+                gameState.history.survivalRates.black.push(b*100);
+                gameState.history.geneFrequencies.S.push(newP);
+                gameState.history.geneFrequencies.s.push(1-newP);
+                gameState.history.generations.push(gameState.generation);
+            }
+            
+            updateCharts();
+            updateStats();
+            document.getElementById('generation').textContent = gameState.generation;
+            
+            const trans = document.getElementById('generation-transition');
+            trans.querySelector('h2').textContent = "Sim Complete";
+            trans.style.display = 'block';
+            setTimeout(() => { 
+                trans.style.display = 'none'; 
+                trans.querySelector('h2').textContent = t('round_end');
+            }, 1000);
+        }
+
+        function updateCharts() {
+            survivalChart.data.labels = gameState.history.generations;
+            survivalChart.data.datasets[0].data = gameState.history.survivalRates.white;
+            survivalChart.data.datasets[1].data = gameState.history.survivalRates.black;
+            survivalChart.update();
+            frequencyChart.data.labels = gameState.history.generations;
+            frequencyChart.data.datasets[0].data = gameState.history.geneFrequencies.S;
+            frequencyChart.data.datasets[1].data = gameState.history.geneFrequencies.s;
+            frequencyChart.update();
+        }
+
+        document.getElementById('toggle-env').addEventListener('click', () => {
+             if(gameState.isPlaying) return;
+             setEnv(gameState.environment === 'white' ? 'black' : 'white');
+        });
+        document.getElementById('reset-game').addEventListener('click', () => {
+            if(confirm('Restart?')) location.reload();
+        });
+        document.getElementById('start-button').addEventListener('click', () => {
+             if(!gameState.isPlaying) startGame();
+        });
+
+        // 初始化语言
+        updateTexts();
+
+    </script>
+</body>
+</html>
