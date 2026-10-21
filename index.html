@@ -75,12 +75,17 @@
         .white-env .white-moth { opacity: 0.55; }
         .white-env .black-moth { opacity: 0.9; }
         .black-env .white-moth { opacity: 0.9; }
-        .black-env .black-moth { opacity: 0.15; }
+        .black-env .black-moth {
+            opacity: 0.9;
+            filter: brightness(0) invert(0.3) drop-shadow(0 0 1px rgba(230,235,240,0.7));
+        }
 
         .moth:hover {
             opacity: 0.4 !important;
             transform: scale(1.2);
         }
+
+        .black-env .black-moth:hover { opacity: 1 !important; }
 
         .capture-effect {
             position: absolute;
