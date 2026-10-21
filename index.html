@@ -56,16 +56,23 @@
         /* --- 飞蛾样式 --- */
         .moth {
             position: absolute;
-            font-size: 35px;
+            width: 64px;
+            height: 64px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            line-height: 1;
             cursor: pointer;
+            touch-action: manipulation;
             transition: opacity 0.2s ease;
             z-index: 10;
         }
 
-        .white-moth { filter: brightness(0) invert(1); }
+        .white-moth { filter: brightness(0) invert(1) drop-shadow(0 0 1px rgba(40,40,40,0.8)); }
         .black-moth { filter: brightness(0); }
 
-        .white-env .white-moth { opacity: 0.15; }
+        .white-env .white-moth { opacity: 0.55; }
         .white-env .black-moth { opacity: 0.9; }
         .black-env .white-moth { opacity: 0.9; }
         .black-env .black-moth { opacity: 0.15; }
@@ -484,6 +491,9 @@
 
         const gameStage = document.getElementById('game-stage');
 
+        // Classroom pacing: allow time to find each moth before it disappears.
+        const mothTiming = { spawnIntervalMs: 1500, visibleDurationMs: 5000 };
+
         let gameState = {
             mode: null,
             historyStage: 1,
@@ -618,26 +628,34 @@
             
             const stageW = gameStage.clientWidth;
             const stageH = gameStage.clientHeight;
+
+            // Keep the larger moth and its hover outline inside the stage.
+            gameStage.appendChild(moth);
+            const maxX = Math.max(0, stageW - moth.offsetWidth);
+            const maxY = Math.max(0, stageH - moth.offsetHeight);
+            const padX = Math.min(16, maxX / 2);
+            const padY = Math.min(16, maxY / 2);
+            const randomX = () => padX + Math.random() * (maxX - padX * 2);
+            const randomY = () => padY + Math.random() * (maxY - padY * 2);
             
-            let x = Math.random() * (stageW - 60) + 30;
-            let y = Math.random() * (stageH - 60) + 30;
+            let x = randomX();
+            let y = randomY();
             
             let attempts = 0;
             while(attempts < 5 && isTooClose(x, y)) {
-                x = Math.random() * (stageW - 60) + 30;
-                y = Math.random() * (stageH - 60) + 30;
+                x = randomX();
+                y = randomY();
                 attempts++;
             }
             
             moth.style.left = x + 'px';
             moth.style.top = y + 'px';
             
-            moth.addEventListener('mousedown', function(e) {
+            moth.addEventListener('pointerdown', function(e) {
                 e.stopPropagation();
                 if (gameState.isPlaying) catchMoth(this);
             });
             
-            gameStage.appendChild(moth);
             gameState.moths.push({ element: moth, x, y });
             gameState.stats[ph].total++;
             gameState.genotypeStats[g].total++;
@@ -647,7 +665,7 @@
                     moth.remove();
                     gameState.moths = gameState.moths.filter(m => m.element !== moth);
                 }
-            }, 3000);
+            }, mothTiming.visibleDurationMs);
             updateStats();
         }
 
@@ -655,7 +673,7 @@
             return gameState.moths.some(m => {
                 const dx = m.x - x;
                 const dy = m.y - y;
-                return Math.sqrt(dx*dx + dy*dy) < 60;
+                return Math.sqrt(dx*dx + dy*dy) < 80;
             });
         }
 
@@ -716,7 +734,7 @@
                 if(!gameState.isPlaying) { clearInterval(mothInt); return; }
                 const c = Math.floor(Math.random()*3)+3;
                 for(let i=0; i<c; i++) if(gameState.moths.length < 18) createMoth();
-            }, 800);
+            }, mothTiming.spawnIntervalMs);
             
             const timeInt = setInterval(() => {
                 if(!gameState.isPlaying) { clearInterval(timeInt); return; }
